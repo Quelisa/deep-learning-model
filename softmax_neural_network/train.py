@@ -1,8 +1,10 @@
 from model import Model
 import argparse
 import torch
+from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
+
 
 def GetDataset(filename, batch_size):
     data = []
@@ -28,6 +30,7 @@ def accuracy(y_pred, y):
     cmp = y_pred.type(y.dtype) == y
     return float(cmp.type(y.dtype).sum())
 
+
 def dev(model, loss, dataloader):
     total_num = 0
     acc_num = 0
@@ -48,20 +51,21 @@ def train(dataset, model, loss, optimazer, epochs):
             batch = tuple(b.cuda for b in batch)
             X = batch[0]
             y = batch[1]
-            l = loss(model(X), y)
+            loss_train = loss(model(X), y)
             optimazer.zero_grad()
-            l.backward()
+            loss_train.backward()
             optimazer.step()
         acc = dev(model, loss, dev_dataloader)
         print('epoch: %d acc: %f' % (epoch, acc))
+
 
 def predict(dataset, model, epoch):
     acc_num = 0
     total_num = 0
     test_dataloader = DataLoader(dataset["test"], batch_size=args.batch_size, shuffle=True)
     for epoch in range(epoch):
-        batch = tuple(b.cuda for b in batch)
-        for step, batch in enumerate(tdqm(test_dataloader)):
+        for step, batch in enumerate(tqdm(test_dataloader)):
+            batch = tuple(b.cuda for b in batch)
             X = batch[0]
             y = batch[1]
             y_pred = model(X)
@@ -71,6 +75,7 @@ def predict(dataset, model, epoch):
 
 
 def main(args):
+    dataset = dict()
     dataset["train"] = GetDataset(args.train_file, args.batch_size)
     dataset["dev"] = GetDataset(args.dev_file, args.batch_size)
     dataset["test"] = GetDataset(args.test_file, args.batch_size)
@@ -80,8 +85,8 @@ def main(args):
     train(dataset, model, loss, optimazer, args.epoch)
 
     if args.predict:
-        predict(dataset["test"], model, args.epoch)
-        print('test acc: %f'% acc)
+        acc = predict(dataset["test"], model, args.epoch)
+        print('test acc: %f' % acc)
 
 
 if __name__ == '__main__':

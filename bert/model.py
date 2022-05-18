@@ -1,4 +1,4 @@
-"""Bert模型
+""" Bert模型
     模型实现参考：https://github.com/dreamgonfly/BERT-pytorch
 """
 import torch

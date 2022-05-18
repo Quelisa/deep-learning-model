@@ -7,6 +7,33 @@ import math
 import numpy as np
 
 
+class BERT(nn.Modlue):
+    def __init__(self, config, token_embedding, positional_embedding, encoder, segment_embedding, hidden_size):
+        super(BERT, self).__init__()
+
+        self.config = config
+        self.token_embedding = nn.Embedding(num_embeddings=config.vocabulary_size, embedding_dim=config.hidden_size)
+        self.positional_embedding = PositionalEmbedding(config.max_len, config.hidden_size)
+        self.segment_embedding = SegmentEmbedding(config.hidden_size)
+        self.encoder = BertEncoder(config.layers_count, config.hidden_size, config.heads_count, config.dropout_prob)  
+    
+    def forward(self, inputs):
+        sequence, segment = inputs
+        token_embedded = self.token_embedding(sequence)
+        positional_embedded = self.positional_embedding(sequence)
+        segment_embedded = self.segment_embedding(segment)
+        embedded_sources = token_embedded + positional_embedded + segment_embedded
+
+        mask = self.padding_mask(sequence)
+        encoded_sources = self.encoder(embedded_sources, mask)
+        return encoded_sources
+    
+    def pad_masking(x):
+        # x: (batch_size, seq_len)
+        padded_positions = x == 0
+        return padded_positions.unsqueeze(1)
+
+
 class PositionalEmbedding(nn.Module):
     
     def __init__(self, max_len, hidden_size):
@@ -48,6 +75,50 @@ class BertEncoder(nn.Module):
         for encoder_layer in self.encoder_layers:
             sources = encoder_layer(sources, mask)
         return sources
+
+
+class EncoderLayer(nn.Module):
+    
+    def __init__(self, d_model, heads_count, d_ff, dropout_prob):
+        super(EncoderLayer, self).__init__()
+
+        self.self_attention_layer = Sublayer(MultiHeadAttention(heads_count, d_model, dropout_prob), d_model)
+        self.pointwise_feedforward_layer = Sublayer(PointwiseFeedForwardNetwork(d_ff, d_model, dropout_prob), d_model)
+        self.dropout = nn.Dropout(dropout_prob)
+
+    def forward(self, sources, sources_mask):
+        sources = self.self_attention_layer(sources, sources, sources, sources_mask)
+        sources = self.dropout(sources)
+        sources = self.pointwise_feedforward_layer(sources)
+        return sources
+
+
+class Sublayer(nn.Module):
+    
+    def __init__(self, sublayer, d_model):
+        super(Sublayer, self).__init__()
+
+        self.sublayer = sublayer
+        self.layer_normalization = LayerNormalization(d_model)
+
+    def forward(self, *args):
+        x = args[0]
+        x = self.sublayer(*args) + x
+        return self.layer_normalization(x)
+
+
+class LayerNormalization(nn.Module):
+    
+    def __init__(self, features_count, epsilon=1e-6):
+        super(LayerNormalization, self).__init__()
+        self.gain = nn.Parameter(torch.ones(features_count))
+        self.bias = nn.Parameter(torch.zeros(features_count))
+        self.epsilon = epsilon
+
+    def forward(self, x):
+        mean = x.mean(dim=-1, keepdim=True)
+        std = x.std(dim=-1, keepdim=True)
+        return self.gain * (x - mean) / (std + self.epsilon) + self.bias
 
 
 class MultiHeadAttention(nn.Module):
@@ -138,74 +209,3 @@ class PointwiseFeedForwardNetwork(nn.Module):
 class GELU():
     def forward(self, x):
         return 0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
-
-
-class Sublayer(nn.Module):
-    
-    def __init__(self, sublayer, d_model):
-        super(Sublayer, self).__init__()
-
-        self.sublayer = sublayer
-        self.layer_normalization = LayerNormalization(d_model)
-
-    def forward(self, *args):
-        x = args[0]
-        x = self.sublayer(*args) + x
-        return self.layer_normalization(x)
-
-
-class LayerNormalization(nn.Module):
-    
-    def __init__(self, features_count, epsilon=1e-6):
-        super(LayerNormalization, self).__init__()
-        self.gain = nn.Parameter(torch.ones(features_count))
-        self.bias = nn.Parameter(torch.zeros(features_count))
-        self.epsilon = epsilon
-
-    def forward(self, x):
-        mean = x.mean(dim=-1, keepdim=True)
-        std = x.std(dim=-1, keepdim=True)
-        return self.gain * (x - mean) / (std + self.epsilon) + self.bias
-
-
-class EncoderLayer(nn.Module):
-    
-    def __init__(self, d_model, heads_count, d_ff, dropout_prob):
-        super(EncoderLayer, self).__init__()
-
-        self.self_attention_layer = Sublayer(MultiHeadAttention(heads_count, d_model, dropout_prob), d_model)
-        self.pointwise_feedforward_layer = Sublayer(PointwiseFeedForwardNetwork(d_ff, d_model, dropout_prob), d_model)
-        self.dropout = nn.Dropout(dropout_prob)
-
-    def forward(self, sources, sources_mask):
-        sources = self.self_attention_layer(sources, sources, sources, sources_mask)
-        sources = self.dropout(sources)
-        sources = self.pointwise_feedforward_layer(sources)
-        return sources
-
-
-class BERT(nn.Modlue):
-    def __init__(self, config, token_embedding, positional_embedding, encoder, segment_embedding, hidden_size):
-        super(BERT, self).__init__()
-
-        self.config = config
-        self.token_embedding = nn.Embedding(num_embeddings=config.vocabulary_size, embedding_dim=config.hidden_size)
-        self.positional_embedding = PositionalEmbedding(config.max_len, config.hidden_size)
-        self.segment_embedding = SegmentEmbedding(config.hidden_size)
-        self.encoder = BertEncoder(config.layers_count, config.hidden_size, config.heads_count, config.dropout_prob)  
-    
-    def forward(self, inputs):
-        sequence, segment = inputs
-        token_embedded = self.token_embedding(sequence)
-        positional_embedded = self.positional_embedding(sequence)
-        segment_embedded = self.segment_embedding(segment)
-        embedded_sources = token_embedded + positional_embedded + segment_embedded
-
-        mask = self.padding_mask(sequence)
-        encoded_sources = self.encoder(embedded_sources, mask)
-        return encoded_sources
-    
-    def pad_masking(x):
-        # x: (batch_size, seq_len)
-        padded_positions = x == 0
-        return padded_positions.unsqueeze(1)
